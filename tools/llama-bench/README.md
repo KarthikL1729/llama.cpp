@@ -16,6 +16,9 @@ Performance testing tool for llama.cpp.
     3. [JSON](#json)
     4. [JSONL](#jsonl)
     5. [SQL](#sql)
+4. [Vision-language benchmarking (llama-bench-vl)](#vision-language-benchmarking-llama-bench-vl)
+  1. [Usage](#usage)
+  2. [Metrics](#metrics)
 
 ## Syntax
 
@@ -347,3 +350,38 @@ CREATE TABLE IF NOT EXISTS test (
 INSERT INTO test (build_commit, build_number, cpu_info, gpu_info, backends, model_filename, model_type, model_size, model_n_params, n_batch, n_ubatch, n_threads, cpu_mask, cpu_strict, poll, type_k, type_v, n_gpu_layers, split_mode, main_gpu, no_kv_offload, flash_attn, tensor_split, use_mmap, embeddings, n_prompt, n_gen, n_depth, test_time, avg_ns, stddev_ns, avg_ts, stddev_ts) VALUES ('8cf427ff', '5163', 'AMD Ryzen 7 7800X3D 8-Core Processor', 'NVIDIA GeForce RTX 4080', 'CUDA', 'models/Qwen2.5-7B-Instruct-Q4_K_M.gguf', 'qwen2 7B Q4_K - Medium', '4677120000', '7615616512', '2048', '512', '8', '0x0', '0', '50', 'f16', 'f16', '99', 'layer', '0', '0', '0', '0.00', '1', '0', '512', '0', '0', '2025-04-24T12:00:08Z', '69905000', '519516', '7324.546977', '54.032613');
 INSERT INTO test (build_commit, build_number, cpu_info, gpu_info, backends, model_filename, model_type, model_size, model_n_params, n_batch, n_ubatch, n_threads, cpu_mask, cpu_strict, poll, type_k, type_v, n_gpu_layers, split_mode, main_gpu, no_kv_offload, flash_attn, tensor_split, use_mmap, embeddings, n_prompt, n_gen, n_depth, test_time, avg_ns, stddev_ns, avg_ts, stddev_ts) VALUES ('8cf427ff', '5163', 'AMD Ryzen 7 7800X3D 8-Core Processor', 'NVIDIA GeForce RTX 4080', 'CUDA', 'models/Qwen2.5-7B-Instruct-Q4_K_M.gguf', 'qwen2 7B Q4_K - Medium', '4677120000', '7615616512', '2048', '512', '8', '0x0', '0', '50', 'f16', 'f16', '99', 'layer', '0', '0', '0', '0.00', '1', '0', '0', '128', '0', '2025-04-24T12:00:09Z', '1063608780', '4464130', '120.346696', '0.504647');
 ```
+
+## Vision-language benchmarking (llama-bench-vl)
+
+`llama-bench-vl` extends the benchmark suite to multimodal models that consume text plus images. The tool shares the same backend, threading, and output flags as `llama-bench` while adding a few multimodal-specific ones:
+
+- `--mmproj <file>`: path to the multimodal projector (required).
+- `--image <file>`: one or more images that will be embedded in the prompt (repeatable and required).
+- `--prompt` / `--prompt-file`: prompt template containing `<__media__>` markers (defaults to `Describe the image in detail: <__media__>`). Missing markers are automatically appended so the prompt always matches the number of images.
+- `--media-marker <token>`: override the marker token if your model requires a different one.
+- `--no-mmproj-offload`: keep projection on the CPU even if a GPU is available.
+- `--image-min-tokens` / `--image-max-tokens`: bounds used by dynamic-resolution projectors.
+
+### Usage
+
+```sh
+$ ./llama-bench-vl \
+  --model models/Qwen2-VL-7B-Instruct-Q4_K_M.gguf \
+  --mmproj models/Qwen2-VL-7B-Instruct-mmproj.gguf \
+  --image assets/dog.png --image assets/mountains.jpg \
+  --prompt "Answer concisely: <__media__><__media__>" \
+  -b 512 -t 8 -r 3
+```
+
+The command above measures encode/decode throughput for the supplied images while honoring the same batching and backend combinations supported by the text benchmark. All results can be emitted in CSV/JSON/Markdown/SQL using the familiar `-o/--output` switches.
+
+### Metrics
+
+`llama-bench-vl` reports every baseline column plus new multimodal-specific ones:
+
+- `media_tokens`, `text_tokens`, and `media_chunks` capture how many tokens came from each modality.
+- `media_ts` and `text_ts` expose media and text throughput in tokens per second.
+- `avg_media_encode_ns`, `avg_media_decode_ns`, and `avg_text_decode_ns` split the per-iteration timings (standard deviations are also printed).
+- `media_pixels` and `media_files` describe the dataset used for the run so results stay traceable.
+
+These extra metrics make it easier to tune projector offload, batch sizes, and resolution limits for image-capable models.
